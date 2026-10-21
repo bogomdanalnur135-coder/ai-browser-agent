@@ -1,0 +1,22 @@
+services:
+  ai-browser-agent:
+    build: .
+    container_name: ai-browser-agent-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+    volumes:
+      - browser-profile:/app/browser-profile
+      - agent-data:/app/data
+    init: true
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+volumes:
+  browser-profile:
+  agent-data:
