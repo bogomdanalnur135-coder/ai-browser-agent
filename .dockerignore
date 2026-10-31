@@ -3,3 +3,11 @@ node_modules
 browser-profile
 .git
 npm-debug.log
+capsolver-extension/
+**/*.backup
+*.backup
+*.log
+*.pid
+*.before-*
+Dockerfile.backup-*
+docker-compose.backup-*

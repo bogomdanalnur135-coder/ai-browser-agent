@@ -1,10 +1,32 @@
-FROM mcr.microsoft.com/playwright:v1.51.0-noble
-ENV NODE_ENV=production PORT=8080 HEADLESS=true
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
+
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV HEADLESS=false
+ENV DISPLAY=:99
+
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       xvfb \
+       x11vnc \
+       novnc \
+       websockify \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json ./
 RUN npm install --omit=dev
+
 COPY server.mjs ./
-RUN mkdir -p /app/browser-profile /app/data && chown -R pwuser:pwuser /app
+COPY start.sh ./
+
+RUN mkdir -p /app/browser-profile /app/data \
+    && chmod +x /app/start.sh \
+    && chown -R pwuser:pwuser /app
+
+EXPOSE 8080 6080
+
 USER pwuser
-EXPOSE 8080
-CMD ["npm", "start"]
+
+CMD ["/app/start.sh"]
