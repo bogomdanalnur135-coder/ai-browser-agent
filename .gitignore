@@ -15,3 +15,5 @@ node_modules/
 *.before-*-2026*
 .last-task-id
 data/
+capsolver-extension/
+captcha-test-site/
