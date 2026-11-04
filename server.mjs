@@ -349,7 +349,7 @@ const bedrockToolConfig = { tools: toolDefs().map(f => ({ toolSpec: { name: f.na
 async function runTool(t, name, args) {
   switch (name) {
     case "open_url": { const r = await openUrl(args); if (r.record) recordStep(t, ...r.record); return r; }
-    case "read_page": return readPage();
+    case "read_page": { const r = await readPage(); const last = t.recordedSteps?.[t.recordedSteps.length - 1]; if (t.recordedSteps && last?.tool !== "read_page") { const u = (await getPage()).url(); recordStep(t, "read_page", {}, u, u); } return r; }
     case "fill_field": return fillField(args, t);
     case "click_text": return clickText(args, t);
     case "request_human_action": return requestHumanAction(t, args);
@@ -447,25 +447,28 @@ async function runWorkflow(t) {
   const total = wf.steps.length;
   const params = { ...(wf.params || {}), ...(t.params || {}) };
   let i = 0;
+  const pages = [];
   try {
     for (; i < total; i++) {
       if (t.cancelled) return update(t, { status: "cancelled", result: "Задача отменена." });
       const step = wf.steps[i];
       const args = interpolate(step.args, params);
+      const runOne = () => step.tool === "read_page" ? readPage() : execStep(t, step, args);
       update(t, { progress: { step: i + 1, total } });
       log(t, `Шаг ${i + 1}/${total}: ${step.tool} ${JSON.stringify(redact(step.tool, args))}${step.approval ? " [требует подтверждения]" : ""}`);
-      let r = await execStep(t, step, args);
+      let r = await runOne();
       if (!r.ok && !r.rejected && await detectHumanCheck(await getPage())) {
         // сайт показал проверку «вы человек» — не обходим, просим человека и повторяем шаг один раз
         const done = await requestHumanAction(t, { reason: "Сайт запросил проверку. Пройдите её вручную", actionRequired: "Выполните проверку в браузере (noVNC), затем подтвердите" });
-        if (done.ok) r = await execStep(t, step, args);
+        if (done.ok) r = await runOne();
         else r = done;
       }
       if (r.rejected) { if (!t.cancelled) update(t, { status: "cancelled", result: `Остановлено пользователем на шаге ${i + 1}/${total}.` }); return; }
       if (!r.ok) throw new Error(`Шаг ${i + 1}/${total} (${step.tool}): ${r.msg}`);
       log(t, r.msg.slice(0, 300));
+      if (step.tool === "read_page") { try { const d = JSON.parse(r.msg.split("\n\nВНИМАНИЕ")[0]); pages.push({ step: i + 1, url: d.url, title: d.title, text: String(d.text || "").slice(0, 3000) }); } catch {} }
     }
-    update(t, { status: "completed", result: { workflow: t.workflow, stepsExecuted: total, finalUrl: (await getPage()).url() } });
+    update(t, { status: "completed", result: { workflow: t.workflow, stepsExecuted: total, finalUrl: (await getPage()).url(), pages, lastPage: pages[pages.length - 1] || null } });
   } catch (e) {
     let shot = "";
     try { await fs.mkdir(FAILURES_DIR, { recursive: true }); shot = path.join(FAILURES_DIR, `${t.id}.png`); await (await getPage()).screenshot({ path: shot }); log(t, `Скриншот: ${shot}`); } catch { shot = ""; }
