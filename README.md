@@ -5,7 +5,7 @@
 ## Что нужно
 
 - Docker Desktop (Mac/Windows) или Docker Engine + Compose (Linux/VPS)
-- OpenAI API key с доступом к выбранной модели
+- Amazon Bedrock API key и ID модели/inference profile с поддержкой tool use (Converse API)
 
 ## Быстрый запуск на Mac
 
@@ -17,7 +17,7 @@
    cp .env.example .env
    ```
 
-4. Откройте `.env` в редакторе и замените `OPENAI_API_KEY` и `API_TOKEN`. Для токена можно сгенерировать секрет командой `openssl rand -hex 32`.
+4. Откройте `.env` в редакторе и замените `AWS_BEARER_TOKEN_BEDROCK`, `AWS_BEDROCK_MODEL_ID` и `API_TOKEN`. Для токена можно сгенерировать секрет командой `openssl rand -hex 32`.
 5. Соберите и запустите контейнер:
 
    ```bash
@@ -92,6 +92,40 @@ curl -X POST http://localhost:8080/memory \\
 ## Быстродействие
 
 В `.env` доступны `MAX_STEPS` (5–60, по умолчанию 30) и `PAGE_TEXT_LIMIT` (3000–20000 символов, по умолчанию 10000). Уменьшение лимита текста страницы и числа шагов может ускорить задачи и сократить расход токенов, но иногда снижает качество на сложных сайтах.
+
+## Workflows: записать длинное действие и вызывать как API
+
+Передайте `saveAsWorkflow` (и, при желании, `params`) в обычную задачу. Агент выполнит её сам, а успешные шаги
+(`open_url`, `click_text`, `fill_field`) запишутся в `data/workflows.json`. Значения из `params` заменяются
+плейсхолдерами `{{ключ}}`; сами значения остаются **значениями по умолчанию**.
+
+```
+curl -X POST http://localhost:8080/tasks -H 'Authorization: Bearer YOUR_API_TOKEN' -H 'Content-Type: application/json' \
+  -d '{"prompt":"Оформи заказ ...","saveAsWorkflow":"order","params":{"email":"john@example.com","city":"Astana"}}'
+```
+
+Потом повторяйте без LLM — это асинхронная задача (`202` + `GET /tasks/:id`), как и обычные:
+
+```
+curl -X POST http://localhost:8080/workflows/order/run -H 'Authorization: Bearer YOUR_API_TOKEN' \
+  -H 'Content-Type: application/json' -d '{"params":{"email":"mary@example.com","city":"Almaty"}}'
+```
+
+- Финальные действия (отправка формы, оплата и т.п.) тоже записываются с флагом `approval`: при повторе задача встаёт в
+  `awaiting_confirmation` и ждёт `POST /tasks/:id/confirm` — без подтверждения такой шаг не выполняется. Если подтверждения нет
+  `APPROVAL_TIMEOUT_MS`, шаг отклоняется.
+- Каждый шаг ждёт свой элемент до `STEP_TIMEOUT_MS` (SPA, ленивый рендер). При ошибке задача получает `failed`,
+  номер шага в тексте ошибки и скриншот в `data/failures/<task id>.png`.
+- Если на шаге появилась проверка «вы человек», задача встаёт на ручной этап (noVNC) и после `/confirm` повторяет шаг.
+- `GET /workflows`, `GET /workflows/:name` (шаги целиком), `DELETE /workflows/:name`.
+- Значения `fill_field`, не заменённые параметрами, сохраняются как есть — не записывайте персональные данные без `params`.
+
+## Память контейнера
+
+`headless: false` памяти не добавляет (Xvfb и оконный Chromium потребляют больше). Реальные пределы задают Docker:
+`mem_limit` / `shm_size` в `docker-compose.yml` (переопределяются `AGENT_MEM_LIMIT`, `AGENT_SHM_SIZE` в `.env`) и, на Mac/Windows,
+общий лимит виртуальной машины Docker Desktop (Settings → Resources). Проверить, убивал ли контейнер OOM:
+`docker inspect -f '{{.State.OOMKilled}}' ai-browser-agent-api`. Текущее потребление: `docker stats` и поле `rssMb` в `GET /health`.
 
 ## Проверки «я человек» / CAPTCHA
 

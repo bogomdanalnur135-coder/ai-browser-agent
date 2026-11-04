@@ -8,3 +8,10 @@ browser-profile/
 *.bak2
 data/
 node_modules/
+*.backup*
+*.bak
+*.before-*
+*.backup-visual
+*.before-*-2026*
+.last-task-id
+data/

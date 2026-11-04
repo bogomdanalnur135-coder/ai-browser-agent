@@ -5,15 +5,24 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      HEADLESS: "false"
+      HEADLESS: "false"          # окно Chromium видно через noVNC: http://localhost:6080/vnc.html
     ports:
-      - "127.0.0.1:8081:8080"
-      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:8081:8080"    # REST API
+      - "127.0.0.1:6080:6080"    # noVNC
     volumes:
       - browser-profile:/app/browser-profile
       - agent-data:/app/data
     init: true
-    shm_size: "1gb"
+    # Ресурсы. Переопределяются в .env: AGENT_MEM_LIMIT=6g, AGENT_SHM_SIZE=3gb
+    shm_size: "${AGENT_SHM_SIZE:-2gb}"      # /dev/shm для Chromium; при нехватке вкладки падают («Aw, Snap!»)
+    mem_limit: "${AGENT_MEM_LIMIT:-4g}"     # потолок RAM контейнера (не резерв)
+    memswap_limit: "${AGENT_MEM_LIMIT:-4g}" # = mem_limit -> без свопа, быстрый и понятный OOM вместо тормозов
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
 volumes:
   browser-profile:
